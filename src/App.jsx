@@ -1,65 +1,54 @@
 ﻿import React from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from '@/components/ui/sonner';
-import Layout from '@/components/layout/Layout';
+import { Toaster } from 'sonner';
 
-// Importação das Páginas
-import Home from '@/pages/Home';
-import Agenda from '@/pages/Agenda';
-import AoVivo from '@/pages/AoVivo';
-import Ofertas from '@/pages/Ofertas';
-import Lideranca from '@/pages/Lideranca';
-import Congregacoes from '@/pages/Congregacoes';
-import Departamentos from '@/pages/Departamentos';
-import Noticias from '@/pages/Noticias';
-import NoticiaDetalhe from '@/pages/NoticiaDetalhe';
-import Conteudo from '@/pages/Conteudo';
+import Home from './pages/Home';
+import Agenda from './pages/Agenda';
+import AoVivo from './pages/AoVivo';
+import Ofertas from './pages/Ofertas';
+import Lideranca from './pages/Lideranca';
+import Departamentos from './pages/Departamentos';
+import Congregacoes from './pages/Congregacoes';
+import Noticias from './pages/Noticias';
+import NoticiaDetalhe from './pages/NoticiaDetalhe';
+import Conteudo from './pages/Conteudo';
+import Admin from './components/admin/Admin';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      staleTime: 1000 * 60 * 5, // 5 minutos
+    },
+  },
+});
 
-function AppContent() {
-  const location = useLocation();
-  
-  const getCurrentPageName = () => {
-    const path = location.pathname;
-    if (path === '/') return 'Home';
-    if (path.startsWith('/agenda')) return 'Agenda';
-    if (path.startsWith('/ao-vivo')) return 'AoVivo';
-    if (path.startsWith('/ofertas')) return 'Ofertas';
-    if (path.startsWith('/lideranca')) return 'Lideranca';
-    if (path.startsWith('/congregacoes')) return 'Congregacoes';
-    if (path.startsWith('/departamentos')) return 'Departamentos';
-    if (path.startsWith('/noticias')) return 'Noticias';
-    if (path.startsWith('/conteudo')) return 'Conteudo';
-    return '';
-  };
-
-  return (
-    <Layout currentPageName={getCurrentPageName()}>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/agenda" element={<Agenda />} />
-        <Route path="/ao-vivo" element={<AoVivo />} />
-        <Route path="/ofertas" element={<Ofertas />} />
-        <Route path="/lideranca" element={<Lideranca />} />
-        <Route path="/congregacoes" element={<Congregacoes />} />
-        <Route path="/departamentos" element={<Departamentos />} />
-        <Route path="/noticias" element={<Noticias />} />
-        <Route path="/noticia-detalhe" element={<NoticiaDetalhe />} />
-        <Route path="/conteudo" element={<Conteudo />} />
-      </Routes>
-    </Layout>
-  );
-}
-
-export default function App() {
+function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
-        <AppContent />
-        <Toaster />
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/agenda" element={<Agenda />} />
+          <Route path="/aovivo" element={<AoVivo />} />
+          <Route path="/ofertas" element={<Ofertas />} />
+          <Route path="/lideranca" element={<Lideranca />} />
+          <Route path="/departamentos" element={<Departamentos />} />
+          <Route path="/congregacoes" element={<Congregacoes />} />
+          <Route path="/noticias" element={<Noticias />} />
+          <Route path="/noticia/:id" element={<NoticiaDetalhe />} />
+          <Route path="/conteudo" element={<Conteudo />} />
+          
+          {/* Rota Administrativa */}
+          <Route path="/admin" element={<Admin />} />
+          
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+        <Toaster position="top-center" richColors />
       </Router>
     </QueryClientProvider>
   );
 }
+
+export default App;
