@@ -1,113 +1,89 @@
 ﻿import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { Plus, Calendar, Repeat } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, Calendar as CalendarIcon, Clock, RefreshCw, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import EntityForm from './EntityForm';
-import DataTable from './DataTable';
-
-const eventFields = [
-  { name: 'title', label: 'Título do Evento', type: 'text', required: true },
-  { name: 'description', label: 'Descrição Detalhada', type: 'textarea' },
-  { name: 'event_type', label: 'Tipo', type: 'select', options: [{value:'culto',label:'Culto'},{value:'evento',label:'Evento Especial'},{value:'reuniao',label:'Reunião'}] },
-
-  // Seção de Data e Hora
-  { name: 'date', label: 'Data Início', type: 'date' },
-  { name: 'end_date', label: 'Data Fim (Opcional)', type: 'date' }, // ADICIONADO AQUI
-  { name: 'start_time', label: 'Horário de Início', type: 'time', required: true },
-  { name: 'end_time', label: 'Horário de Término', type: 'time' },
-
-  // Seção de Recorrência
-  { name: 'is_recurring', label: 'Evento Recorrente? (Repete toda semana)', type: 'boolean', defaultValue: false, switchLabel: 'Sim, repete toda semana' },
-  { name: 'recurrence_day', label: 'Dia da Semana (Se recorrente)', type: 'select', options: [
-    {value:'sunday',label:'Domingo'},
-    {value:'monday',label:'Segunda-feira'},
-    {value:'tuesday',label:'Terça-feira'},
-    {value:'wednesday',label:'Quarta-feira'},
-    {value:'thursday',label:'Quinta-feira'},
-    {value:'friday',label:'Sexta-feira'},
-    {value:'saturday',label:'Sábado'}
-  ]},
-
-  { name: 'location', label: 'Local', type: 'text', placeholder: 'Ex: Templo Sede' },
-  { name: 'image_url', label: 'Banner / Imagem', type: 'image' },
-  { name: 'is_highlighted', label: 'Destaque na Home?', type: 'boolean', defaultValue: false },
-  { name: 'is_active', label: 'Ativo', type: 'boolean', defaultValue: true },
-];
-
-const formatDateNoTimezone = (dateString, endDateString) => {
-  if (!dateString) return '-';
-  
-  const parseDate = (str) => {
-    const [year, month, day] = str.split('T')[0].split('-');
-    return { day, month: parseInt(month) - 1 };
-  };
-
-  const start = parseDate(dateString);
-  const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-  
-  if (endDateString && endDateString !== dateString) {
-    const end = parseDate(endDateString);
-    return `${start.day}/${months[start.month]} até ${end.day}/${months[end.month]}`;
-  }
-
-  return `${start.day} de ${months[start.month]}`;
-};
-
-const translateDay = (day) => {
-  const days = {
-    'sunday': 'Todo Domingo',
-    'monday': 'Toda Segunda',
-    'tuesday': 'Toda Terça',
-    'wednesday': 'Toda Quarta',
-    'thursday': 'Toda Quinta',
-    'friday': 'Toda Sexta',
-    'saturday': 'Todo Sábado'
-  };
-  return days[day] || day;
-};
 
 export default function AdminEvents() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [isRecurring, setIsRecurring] = useState(false);
+  
   const queryClient = useQueryClient();
-  const [formOpen, setFormOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
 
-  const { data: events = [] } = useQuery({
-    queryKey: ['events'],
+  // Função auxiliar para formatar data ignorando timezone (UTC fix)
+  const formatDateUTC = (dateString) => {
+    if (!dateString) return '';
+    // Divide a string YYYY-MM-DD e cria a data manualmente para evitar conversão de fuso
+    const [year, month, day] = dateString.split('T')[0].split('-');
+    return `${day}/${month}/${year}`;
+  };
+
+  const { data: events } = useQuery({
+    queryKey: ['adminEvents'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('events').select('*').order('date', { ascending: false });
+      const { data, error } = await supabase.from('events').select('*');
       if (error) throw error;
-      return data;
+      
+      return data.sort((a, b) => {
+         if (a.is_recurring && !b.is_recurring) return -1;
+         if (!a.is_recurring && b.is_recurring) return 1;
+         
+         if (a.is_recurring && b.is_recurring) {
+            const days = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+            return days[a.recurrence_day] - days[b.recurrence_day];
+         }
+
+         if (a.date && b.date) return a.date.localeCompare(b.date);
+         return 0;
+      });
     }
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (data) => {
-      const { id, created_at, ...payload } = data;
+    mutationFn: async (formData) => {
+      const dataToSave = {
+        title: formData.get('title'),
+        description: formData.get('description'),
+        start_time: formData.get('start_time'),
+        location: formData.get('location'),
+        event_type: formData.get('event_type'),
+        is_recurring: isRecurring,
+        is_active: true
+      };
 
-      // Validação simples
-      if (!payload.is_recurring && !payload.date) {
-        throw new Error('Se não for recorrente, precisa de uma data!');
+      if (isRecurring) {
+        dataToSave.recurrence_day = formData.get('recurrence_day');
+        dataToSave.date = null;
+        dataToSave.end_date = null;
+      } else {
+        dataToSave.date = formData.get('date');
+        dataToSave.end_date = formData.get('end_date') || formData.get('date');
+        dataToSave.recurrence_day = null;
       }
-      if (payload.is_recurring && !payload.recurrence_day) {
-        throw new Error('Se for recorrente, escolha o dia da semana!');
-      }
-      
-      // Limpeza de campos vazios
-      if (!payload.end_date) delete payload.end_date;
 
-      if (id) {
-        const { error } = await supabase.from('events').update(payload).eq('id', id);
+      if (editingEvent?.id) {
+        const { error } = await supabase.from('events').update(dataToSave).eq('id', editingEvent.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('events').insert([payload]);
+        const { error } = await supabase.from('events').insert([dataToSave]);
         if (error) throw error;
       }
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['events'] }); toast.success('Salvo!'); setFormOpen(false); },
-    onError: (err) => toast.error('Erro: ' + err.message)
+    onSuccess: () => {
+      queryClient.invalidateQueries(['adminEvents']);
+      setIsOpen(false);
+      toast.success('Evento salvo com sucesso!');
+    },
+    onError: (error) => {
+      console.error(error);
+      toast.error('Erro ao salvar: ' + error.message);
+    }
   });
 
   const deleteMutation = useMutation({
@@ -115,31 +91,178 @@ export default function AdminEvents() {
       const { error } = await supabase.from('events').delete().eq('id', id);
       if (error) throw error;
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['events'] }); toast.success('Removido!'); }
+    onSuccess: () => {
+      queryClient.invalidateQueries(['adminEvents']);
+      toast.success('Evento excluído!');
+    }
   });
 
-  const columns = [
-    { key: 'title', label: 'Evento', render: (item) => <div className="flex items-center gap-3">{item.image_url ? <img src={item.image_url} className="w-12 h-12 rounded-lg object-cover" /> : <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center"><Calendar className="w-5 h-5 text-purple-500" /></div>}<div><p className="font-medium">{item.title}</p><p className="text-sm text-gray-500">{item.location}</p></div></div> },
-    { key: 'date', label: 'Quando?', render: (item) =>
-      <div>
-        {item.is_recurring ? (
-          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-            <Repeat className="w-3 h-3 mr-1" /> {translateDay(item.recurrence_day)}
-          </Badge>
-        ) : (
-          <p className="font-medium">{formatDateNoTimezone(item.date, item.end_date)}</p>
-        )}
-        {item.start_time && <p className="text-sm text-gray-500 mt-1">{item.start_time}</p>}
-      </div>
-    },
-    { key: 'is_active', label: 'Status', render: (item) => <Badge variant={item.is_active ? 'default' : 'secondary'}>{item.is_active ? 'Ativo' : 'Inativo'}</Badge> }
-  ];
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    saveMutation.mutate(formData);
+  };
+
+  const openNew = () => {
+    setEditingEvent(null);
+    setIsRecurring(false);
+    setIsOpen(true);
+  };
+
+  const openEdit = (event) => {
+    setEditingEvent(event);
+    setIsRecurring(event.is_recurring);
+    setIsOpen(true);
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center"><p className="text-sm text-gray-500">{events.length} eventos</p><Button onClick={() => {setEditingItem(null); setFormOpen(true);}} className="bg-amber-500 hover:bg-amber-600"><Plus className="w-4 h-4 mr-2" /> Adicionar</Button></div>
-      <DataTable columns={columns} data={events} onEdit={(item) => {setEditingItem(item); setFormOpen(true);}} onDelete={(id) => deleteMutation.mutate(id)} onToggleActive={(item) => saveMutation.mutate({...item, is_active: !item.is_active})} emptyIcon={Calendar} />
-      <EntityForm isOpen={formOpen} onClose={() => setFormOpen(false)} onSave={(data) => saveMutation.mutate(data)} fields={eventFields} initialData={editingItem} title={editingItem ? 'Editar' : 'Novo'} isSaving={saveMutation.isPending} />
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-800">Gerenciar Agenda</h2>
+        <Button onClick={openNew} className="bg-amber-600 hover:bg-amber-700">
+          <Plus className="w-4 h-4 mr-2" /> Novo Evento
+        </Button>
+
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+          <DialogContent className="sm:max-w-[600px] bg-white p-6 rounded-xl shadow-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="mb-4 border-b pb-2">
+              <DialogTitle>{editingEvent ? 'Editar' : 'Novo'} Evento</DialogTitle>
+              <DialogDescription>Preencha os dados do evento.</DialogDescription>
+            </DialogHeader>
+            
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div className="space-y-2">
+                <Label>Título</Label>
+                <Input name="title" defaultValue={editingEvent?.title} required className="bg-gray-50" />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tipo de Evento</Label>
+                <select 
+                    name="event_type" 
+                    defaultValue={editingEvent?.event_type || "culto"}
+                    className="w-full h-10 px-3 rounded-md border border-gray-300 bg-white text-sm focus:ring-2 focus:ring-amber-500"
+                    required
+                >
+                    <option value="culto">Culto</option>
+                    <option value="evento">Evento Especial</option>
+                    <option value="ensaio">Ensaio</option>
+                    <option value="reuniao">Reunião</option>
+                    <option value="ebd">Escola Dominical</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-3 border p-4 rounded-lg bg-blue-50 border-blue-100">
+                <input 
+                    type="checkbox"
+                    id="rec"
+                    checked={isRecurring}
+                    onChange={(e) => setIsRecurring(e.target.checked)}
+                    className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 border-gray-300"
+                />
+                <Label htmlFor="rec" className="cursor-pointer font-medium text-blue-900 select-none">
+                    Evento Recorrente (Semanal)?
+                </Label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {isRecurring ? (
+                    <div className="space-y-2 col-span-2">
+                        <Label>Dia da Semana</Label>
+                        <select 
+                            name="recurrence_day" 
+                            defaultValue={editingEvent?.recurrence_day || "sunday"}
+                            className="w-full h-10 px-3 rounded-md border border-gray-300 bg-white text-sm focus:ring-2 focus:ring-amber-500"
+                        >
+                            <option value="sunday">Domingo</option>
+                            <option value="monday">Segunda-feira</option>
+                            <option value="tuesday">Terça-feira</option>
+                            <option value="wednesday">Quarta-feira</option>
+                            <option value="thursday">Quinta-feira</option>
+                            <option value="friday">Sexta-feira</option>
+                            <option value="saturday">Sábado</option>
+                        </select>
+                    </div>
+                ) : (
+                    <>
+                        <div className="space-y-2">
+                            <Label>Data Início</Label>
+                            <Input type="date" name="date" defaultValue={editingEvent?.date} required className="bg-gray-50" />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Data Fim (Opcional)</Label>
+                            <Input type="date" name="end_date" defaultValue={editingEvent?.end_date} className="bg-gray-50" />
+                        </div>
+                    </>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Horário</Label>
+                  <Input type="time" name="start_time" defaultValue={editingEvent?.start_time} required className="bg-gray-50" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Local</Label>
+                  <Input name="location" defaultValue={editingEvent?.location || 'Templo Sede'} className="bg-gray-50" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Descrição</Label>
+                <Textarea name="description" defaultValue={editingEvent?.description} className="bg-gray-50" />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>Cancelar</Button>
+                <Button type="submit" className="bg-amber-600 hover:bg-amber-700" disabled={saveMutation.isPending}>
+                  {saveMutation.isPending ? 'Salvando...' : 'Salvar'}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="space-y-3">
+        {events?.map((event) => (
+          <div key={event.id} className="bg-white p-4 rounded-lg shadow-sm border flex justify-between items-center hover:shadow-md transition-all">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="font-bold text-gray-800">{event.title}</h3>
+                <span className="text-[10px] uppercase bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 font-bold tracking-wide">
+                    {event.event_type}
+                </span>
+              </div>
+              <div className="text-sm text-gray-500 flex gap-3 mt-1">
+                {event.is_recurring ? (
+                  <span className="flex items-center gap-1 text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded text-xs">
+                    <RefreshCw className="w-3 h-3" /> Todo(a) <span className="capitalize">{event.recurrence_day}</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-xs">
+                    <CalendarIcon className="w-3 h-3" /> 
+                    {/* AQUI ESTÁ A CORREÇÃO: USANDO formatDateUTC */}
+                    {formatDateUTC(event.date)}
+                    {event.end_date && event.end_date !== event.date && ` até ${formatDateUTC(event.end_date)}`}
+                  </span>
+                )}
+                <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-xs">
+                    <Clock className="w-3 h-3" /> {event.start_time}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="icon" variant="ghost" onClick={() => openEdit(event)} className="text-gray-400 hover:text-amber-600 hover:bg-amber-50">
+                <Edit className="w-4 h-4" />
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => deleteMutation.mutate(event.id)} className="text-gray-400 hover:text-red-600 hover:bg-red-50">
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

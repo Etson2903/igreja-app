@@ -2,11 +2,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { motion } from 'framer-motion';
-import { Calendar as CalIcon, Clock, MapPin, Loader2, Repeat, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar as CalIcon, Clock, MapPin, Loader2, Repeat, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Agenda() {
-  // Estado para o calendário visual (Mês atual)
   const [currentDate, setCurrentDate] = useState(new Date());
 
   const { data: events = [], isLoading } = useQuery({
@@ -16,20 +15,20 @@ export default function Agenda() {
         .from('events')
         .select('*')
         .eq('is_active', true)
-        .order('date', { ascending: true });
+        .order('date', { ascending: true }); // Já traz ordenado do banco
       
       if (error) throw error;
       return data;
     }
   });
 
-  // --- TRATAMENTO DE DATA (STRING PURA) ---
+  // --- TRATAMENTO DE DATA ---
   const parseDate = (dateString) => {
     if (!dateString) return null;
     const parts = dateString.split('T')[0].split('-');
     return {
       year: parseInt(parts[0]),
-      month: parseInt(parts[1]), // 1-12
+      month: parseInt(parts[1]),
       day: parseInt(parts[2])
     };
   };
@@ -39,33 +38,34 @@ export default function Agenda() {
     return months[monthIndex];
   };
 
-  // --- COMPONENTE DE CALENDÁRIO VISUAL ---
+  // --- CALENDÁRIO VISUAL ---
   const renderCalendar = () => {
     const year = currentDate.getFullYear();
-    const month = currentDate.getMonth(); // 0-11
-
-    const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 (Dom) - 6 (Sab)
+    const month = currentDate.getMonth();
+    const firstDayOfMonth = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-
     const days = [];
-    // Dias vazios antes do dia 1
+
     for (let i = 0; i < firstDayOfMonth; i++) {
       days.push(<div key={`empty-${i}`} className="h-8 w-8"></div>);
     }
 
-    // Dias do mês
     for (let d = 1; d <= daysInMonth; d++) {
-      // Verifica se tem evento neste dia
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const currentDayDate = new Date(year, month, d);
       
       const hasEvent = events.some(e => {
-        if (e.is_recurring) return false; // Não marcamos recorrentes no calendário simples para não poluir
+        if (e.is_recurring) {
+            const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            return e.recurrence_day === daysOfWeek[currentDayDate.getDay()];
+        }
+        if (!e.date) return false;
         const start = e.date.split('T')[0];
         const end = e.end_date ? e.end_date.split('T')[0] : start;
         return dateStr >= start && dateStr <= end;
       });
 
-      const isToday = new Date().toDateString() === new Date(year, month, d).toDateString();
+      const isToday = new Date().toDateString() === currentDayDate.toDateString();
 
       days.push(
         <div key={d} className="h-8 w-8 flex items-center justify-center relative">
@@ -104,17 +104,32 @@ export default function Agenda() {
     );
   };
 
-  // --- LISTA DE EVENTOS ---
+  // --- LISTA DE EVENTOS (ORDENAÇÃO CORRIGIDA) ---
   const displayEvents = events.filter(e => {
-    // Filtra apenas eventos futuros ou recorrentes
+    // 1. Mantém recorrentes
     if (e.is_recurring) return true;
+    
+    // 2. Filtra eventos passados (opcional, se quiser ver histórico remova esta parte)
+    if (!e.date) return false;
     const nowStr = new Date().toISOString().split('T')[0];
     const end = e.end_date ? e.end_date.split('T')[0] : e.date.split('T')[0];
-    return end >= nowStr;
+    return end >= nowStr; // Mostra apenas eventos de hoje em diante
   }).sort((a, b) => {
+     // Lógica de Ordenação:
+     // 1. Recorrentes primeiro (Agenda Fixa)
      if (a.is_recurring && !b.is_recurring) return -1;
      if (!a.is_recurring && b.is_recurring) return 1;
-     return a.date.localeCompare(b.date);
+     
+     // 2. Se ambos forem recorrentes, ordena pelo dia da semana
+     if (a.is_recurring && b.is_recurring) {
+        const days = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+        return days[a.recurrence_day] - days[b.recurrence_day];
+     }
+
+     // 3. Se ambos forem datas únicas, ordena pela data (Mais perto -> Mais longe)
+     if (a.date && b.date) return a.date.localeCompare(b.date);
+     
+     return 0;
   });
 
   if (isLoading) {
@@ -127,7 +142,6 @@ export default function Agenda() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
-      {/* Header */}
       <div className="bg-white px-4 py-4 shadow-sm sticky top-0 z-10 flex items-center gap-4">
         <Link to="/" className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
           <ChevronLeft className="w-6 h-6" />
@@ -136,16 +150,13 @@ export default function Agenda() {
       </div>
 
       <div className="container mx-auto px-4 py-6 max-w-2xl">
-        
-        {/* CALENDÁRIO VISUAL */}
         {renderCalendar()}
 
-        {/* LISTA DE EVENTOS */}
         <div className="space-y-4">
           {displayEvents.map((event, index) => {
             const start = parseDate(event.date);
             const end = parseDate(event.end_date);
-            const isMultiDay = end && (start.day !== end.day || start.month !== end.month);
+            const isMultiDay = start && end && (start.day !== end.day || start.month !== end.month);
 
             return (
               <motion.div
@@ -155,24 +166,24 @@ export default function Agenda() {
                 transition={{ delay: index * 0.05 }}
                 className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex gap-4"
               >
-                {/* Data Box */}
                 <div className="flex flex-col items-center justify-center bg-amber-50 rounded-xl w-16 h-16 shrink-0 border border-amber-100">
                   {event.is_recurring ? (
                     <>
-                      <Repeat className="w-5 h-5 text-amber-600 mb-0.5" />
-                      <span className="text-[10px] font-bold text-amber-700 uppercase">Todo</span>
+                      <RefreshCw className="w-5 h-5 text-amber-600 mb-0.5" />
+                      <span className="text-[9px] font-bold text-amber-700 uppercase text-center leading-tight px-1">
+                        Semanal
+                      </span>
                     </>
                   ) : (
                     <>
-                      <span className="text-xl font-bold text-amber-600 leading-none">{start.day}</span>
+                      <span className="text-xl font-bold text-amber-600 leading-none">{start?.day || '-'}</span>
                       <span className="text-[10px] font-bold text-amber-700 uppercase mt-0.5">
-                        {getMonthName(start.month - 1).substring(0, 3)}
+                        {start ? getMonthName(start.month - 1).substring(0, 3) : '-'}
                       </span>
                     </>
                   )}
                 </div>
 
-                {/* Conteúdo */}
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-start">
                     <h3 className="font-bold text-gray-900 text-lg leading-tight mb-1">{event.title}</h3>
@@ -183,16 +194,21 @@ export default function Agenda() {
                     )}
                   </div>
                   
-                  {/* Exibição de Data Estendida (Multidia) */}
                   {!event.is_recurring && isMultiDay && (
                     <p className="text-sm text-amber-600 font-bold mb-2">
                       {start.day}/{start.month} até {end.day}/{end.month}
                     </p>
                   )}
 
-                  {!event.is_recurring && !isMultiDay && (
+                  {!event.is_recurring && !isMultiDay && start && (
                     <p className="text-sm text-amber-600 font-medium mb-2">
                       {start.day} de {getMonthName(start.month - 1)}
+                    </p>
+                  )}
+
+                  {event.is_recurring && (
+                    <p className="text-sm text-blue-600 font-medium mb-2 flex items-center gap-1">
+                       Todo(a) <span className="capitalize">{event.recurrence_day === 'sunday' ? 'Domingo' : event.recurrence_day}</span>
                     </p>
                   )}
 
@@ -205,7 +221,6 @@ export default function Agenda() {
                       <Clock className="w-3.5 h-3.5 text-amber-500" />
                       <span>
                         {event.start_time?.slice(0, 5)}
-                        {event.end_time && ` - ${event.end_time?.slice(0, 5)}`}
                       </span>
                     </div>
                     {event.location && (
