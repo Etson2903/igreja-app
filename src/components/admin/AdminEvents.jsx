@@ -12,12 +12,13 @@ const eventFields = [
   { name: 'title', label: 'Título do Evento', type: 'text', required: true },
   { name: 'description', label: 'Descrição Detalhada', type: 'textarea' },
   { name: 'event_type', label: 'Tipo', type: 'select', options: [{value:'culto',label:'Culto'},{value:'evento',label:'Evento Especial'},{value:'reuniao',label:'Reunião'}] },
-  
+
   // Seção de Data e Hora
-  { name: 'date', label: 'Data (Para eventos únicos)', type: 'date' },
+  { name: 'date', label: 'Data Início', type: 'date' },
+  { name: 'end_date', label: 'Data Fim (Opcional)', type: 'date' }, // ADICIONADO AQUI
   { name: 'start_time', label: 'Horário de Início', type: 'time', required: true },
   { name: 'end_time', label: 'Horário de Término', type: 'time' },
-  
+
   // Seção de Recorrência
   { name: 'is_recurring', label: 'Evento Recorrente? (Repete toda semana)', type: 'boolean', defaultValue: false, switchLabel: 'Sim, repete toda semana' },
   { name: 'recurrence_day', label: 'Dia da Semana (Se recorrente)', type: 'select', options: [
@@ -36,11 +37,23 @@ const eventFields = [
   { name: 'is_active', label: 'Ativo', type: 'boolean', defaultValue: true },
 ];
 
-const formatDateNoTimezone = (dateString) => {
+const formatDateNoTimezone = (dateString, endDateString) => {
   if (!dateString) return '-';
-  const [year, month, day] = dateString.split('T')[0].split('-');
+  
+  const parseDate = (str) => {
+    const [year, month, day] = str.split('T')[0].split('-');
+    return { day, month: parseInt(month) - 1 };
+  };
+
+  const start = parseDate(dateString);
   const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-  return `${day} de ${months[parseInt(month) - 1]}`;
+  
+  if (endDateString && endDateString !== dateString) {
+    const end = parseDate(endDateString);
+    return `${start.day}/${months[start.month]} até ${end.day}/${months[end.month]}`;
+  }
+
+  return `${start.day} de ${months[start.month]}`;
 };
 
 const translateDay = (day) => {
@@ -61,8 +74,8 @@ export default function AdminEvents() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
 
-  const { data: events = [] } = useQuery({ 
-    queryKey: ['events'], 
+  const { data: events = [] } = useQuery({
+    queryKey: ['events'],
     queryFn: async () => {
       const { data, error } = await supabase.from('events').select('*').order('date', { ascending: false });
       if (error) throw error;
@@ -73,7 +86,7 @@ export default function AdminEvents() {
   const saveMutation = useMutation({
     mutationFn: async (data) => {
       const { id, created_at, ...payload } = data;
-      
+
       // Validação simples
       if (!payload.is_recurring && !payload.date) {
         throw new Error('Se não for recorrente, precisa de uma data!');
@@ -81,6 +94,9 @@ export default function AdminEvents() {
       if (payload.is_recurring && !payload.recurrence_day) {
         throw new Error('Se for recorrente, escolha o dia da semana!');
       }
+      
+      // Limpeza de campos vazios
+      if (!payload.end_date) delete payload.end_date;
 
       if (id) {
         const { error } = await supabase.from('events').update(payload).eq('id', id);
@@ -104,17 +120,17 @@ export default function AdminEvents() {
 
   const columns = [
     { key: 'title', label: 'Evento', render: (item) => <div className="flex items-center gap-3">{item.image_url ? <img src={item.image_url} className="w-12 h-12 rounded-lg object-cover" /> : <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center"><Calendar className="w-5 h-5 text-purple-500" /></div>}<div><p className="font-medium">{item.title}</p><p className="text-sm text-gray-500">{item.location}</p></div></div> },
-    { key: 'date', label: 'Quando?', render: (item) => 
+    { key: 'date', label: 'Quando?', render: (item) =>
       <div>
         {item.is_recurring ? (
           <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
             <Repeat className="w-3 h-3 mr-1" /> {translateDay(item.recurrence_day)}
           </Badge>
         ) : (
-          <p className="font-medium">{formatDateNoTimezone(item.date)}</p>
+          <p className="font-medium">{formatDateNoTimezone(item.date, item.end_date)}</p>
         )}
         {item.start_time && <p className="text-sm text-gray-500 mt-1">{item.start_time}</p>}
-      </div> 
+      </div>
     },
     { key: 'is_active', label: 'Status', render: (item) => <Badge variant={item.is_active ? 'default' : 'secondary'}>{item.is_active ? 'Ativo' : 'Inativo'}</Badge> }
   ];
