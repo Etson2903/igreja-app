@@ -1,14 +1,14 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase';
 import { motion } from 'framer-motion';
 import { 
   LayoutDashboard, Church, Users, Calendar, Newspaper, 
-  Play, MapPin, Building2, Settings, LogOut, Menu, X,
-  ChevronRight, Bell, TrendingUp
+  Play, MapPin, Building2, LogOut, Menu, ChevronRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
 
+import Login from './Login';
 import AdminDashboard from './AdminDashboard';
 import AdminChurchInfo from './AdminChurchInfo';
 import AdminLeaders from './AdminLeaders';
@@ -30,26 +30,46 @@ const menuItems = [
 ];
 
 export default function Admin() {
+  const [session, setSession] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [user, setUser] = useState({ full_name: 'Administrador', email: 'admin@igreja.com' });
 
   useEffect(() => {
-    // Verificação de segurança: só chama se auth existir
-    if (base44 && base44.auth && typeof base44.auth.me === 'function') {
-      base44.auth.me()
-        .then(setUser)
-        .catch(err => console.warn('Erro ao carregar usuário:', err));
-    }
+    // 1. Verifica sessão atual
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    // 2. Escuta mudanças (Login/Logout) em tempo real
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const handleLogout = () => {
-    if (base44 && base44.auth && typeof base44.auth.logout === 'function') {
-      base44.auth.logout();
-    }
-    window.location.href = '/';
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
   };
 
+  // Se estiver carregando, mostra spinner
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+      </div>
+    );
+  }
+
+  // Se NÃO tiver sessão, mostra Login
+  if (!session) {
+    return <Login />;
+  }
+
+  // Se tiver sessão, mostra o Painel Admin
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard': return <AdminDashboard />;
@@ -121,21 +141,19 @@ export default function Admin() {
           </nav>
 
           <div className="p-4 border-t border-gray-100">
-            {user && (
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                  <span className="text-sm font-medium text-gray-600">
-                    {user.full_name?.[0] || user.email?.[0] || 'A'}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {user.full_name || 'Admin'}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                </div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                <span className="text-sm font-medium text-gray-600">
+                  {session.user.email[0].toUpperCase()}
+                </span>
               </div>
-            )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  Administrador
+                </p>
+                <p className="text-xs text-gray-500 truncate">{session.user.email}</p>
+              </div>
+            </div>
             <Button
               variant="outline"
               onClick={handleLogout}

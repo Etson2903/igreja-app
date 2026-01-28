@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
-import { Loader2, Church, Globe, CreditCard, Save } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { Loader2, Church, Globe, CreditCard, Save, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,25 +15,49 @@ export default function AdminChurchInfo() {
 
   const { data: churchInfo, isLoading } = useQuery({
     queryKey: ['churchInfo'],
-    queryFn: async () => { const list = await base44.entities.ChurchInfo.list(); return list[0] || null; }
+    queryFn: async () => {
+      const { data, error } = await supabase.from('church_info').select('*').single();
+      if (error && error.code !== 'PGRST116') throw error; // Ignora erro se não existir registro ainda
+      return data || {};
+    }
   });
 
   useEffect(() => { if (churchInfo) setFormData(churchInfo); }, [churchInfo]);
 
   const saveMutation = useMutation({
-    mutationFn: async (data) => churchInfo?.id ? base44.entities.ChurchInfo.update(churchInfo.id, data) : base44.entities.ChurchInfo.create(data),
+    mutationFn: async (data) => {
+      // Remove campos que não devem ser enviados (como created_at se não for necessário)
+      const { id, created_at, ...updateData } = data;
+      
+      if (data.id) {
+        const { error } = await supabase.from('church_info').update(updateData).eq('id', data.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('church_info').insert([updateData]);
+        if (error) throw error;
+      }
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['churchInfo'] }); toast.success('Dados salvos!'); },
-    onError: () => toast.error('Erro ao salvar')
+    onError: (err) => { console.error(err); toast.error('Erro ao salvar: ' + err.message); }
   });
 
   const handleChange = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
+
   const handleUpload = async (field, file) => {
     if (!file) return;
     setUploading(prev => ({ ...prev, [field]: true }));
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      handleChange(field, file_url);
-      toast.success('Imagem enviada!');
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      
+      const { error: uploadError } = await supabase.storage.from('files').upload(fileName, file);
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('files').getPublicUrl(fileName);
+      handleChange(field, publicUrl);
+      toast.success('Upload concluído!');
+    } catch (error) {
+      toast.error('Erro no upload: ' + error.message);
     } finally {
       setUploading(prev => ({ ...prev, [field]: false }));
     }
@@ -45,10 +69,15 @@ export default function AdminChurchInfo() {
     <div className="space-y-2">
       <Label>{label}</Label>
       <div className="flex items-center gap-4">
-        {currentUrl && <img src={currentUrl} alt={label} className="w-20 h-20 rounded-lg object-cover" />}
+        {currentUrl && <img src={currentUrl} alt={label} className="w-20 h-20 rounded-lg object-cover border" />}
         <div className="flex-1">
-          <Input type="file" accept="image/*" onChange={(e) => handleUpload(field, e.target.files[0])} disabled={uploading[field]} />
-          {uploading[field] && <p className="text-xs text-gray-500 mt-1 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Enviando...</p>}
+          <div className="relative">
+            <Input type="file" accept="image/*" onChange={(e) => handleUpload(field, e.target.files[0])} disabled={uploading[field]} className="hidden" id={`file-${field}`} />
+            <Label htmlFor={`file-${field}`} className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-white border rounded-md hover:bg-gray-50">
+              {uploading[field] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {uploading[field] ? 'Enviando...' : 'Escolher Imagem'}
+            </Label>
+          </div>
         </div>
       </div>
     </div>
@@ -58,16 +87,16 @@ export default function AdminChurchInfo() {
     <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(formData); }} className="space-y-6">
       <Tabs defaultValue="geral" className="w-full">
         <TabsList className="bg-gray-100 p-1 rounded-xl">
-          <TabsTrigger value="geral" className="rounded-lg">Geral</TabsTrigger>
-          <TabsTrigger value="imagens" className="rounded-lg">Imagens</TabsTrigger>
-          <TabsTrigger value="redes" className="rounded-lg">Redes</TabsTrigger>
-          <TabsTrigger value="financeiro" className="rounded-lg">Financeiro</TabsTrigger>
+          <TabsTrigger value="geral">Geral</TabsTrigger>
+          <TabsTrigger value="imagens">Imagens</TabsTrigger>
+          <TabsTrigger value="redes">Redes</TabsTrigger>
+          <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
         </TabsList>
 
         <TabsContent value="geral" className="mt-6 bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-4">
           <div className="flex items-center gap-2 mb-4"><Church className="w-5 h-5 text-amber-500" /><h3 className="font-semibold text-gray-900">Informações Gerais</h3></div>
           <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2"><Label>Nome</Label><Input value={formData.name || ''} onChange={(e) => handleChange('name', e.target.value)} /></div>
+            <div className="space-y-2"><Label>Nome da Igreja</Label><Input value={formData.name || ''} onChange={(e) => handleChange('name', e.target.value)} /></div>
             <div className="space-y-2"><Label>Telefone</Label><Input value={formData.phone || ''} onChange={(e) => handleChange('phone', e.target.value)} /></div>
           </div>
           <div className="space-y-2"><Label>Endereço</Label><Input value={formData.address || ''} onChange={(e) => handleChange('address', e.target.value)} /></div>
@@ -75,13 +104,13 @@ export default function AdminChurchInfo() {
 
         <TabsContent value="imagens" className="mt-6 bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-6">
           <ImageUploadField label="Logomarca" field="logo_url" currentUrl={formData.logo_url} />
-          <ImageUploadField label="Banner da Home" field="banner_url" currentUrl={formData.banner_url} />
+          <ImageUploadField label="Banner da Home (Fundo)" field="banner_url" currentUrl={formData.banner_url} />
         </TabsContent>
 
         <TabsContent value="redes" className="mt-6 bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-4">
           <div className="flex items-center gap-2 mb-4"><Globe className="w-5 h-5 text-amber-500" /><h3 className="font-semibold text-gray-900">Redes Sociais</h3></div>
-          <div className="space-y-2"><Label>Instagram</Label><Input value={formData.instagram_url || ''} onChange={(e) => handleChange('instagram_url', e.target.value)} /></div>
-          <div className="space-y-2"><Label>Facebook</Label><Input value={formData.facebook_url || ''} onChange={(e) => handleChange('facebook_url', e.target.value)} /></div>
+          <div className="space-y-2"><Label>Instagram (URL)</Label><Input value={formData.instagram_url || ''} onChange={(e) => handleChange('instagram_url', e.target.value)} /></div>
+          <div className="space-y-2"><Label>Facebook (URL)</Label><Input value={formData.facebook_url || ''} onChange={(e) => handleChange('facebook_url', e.target.value)} /></div>
           <div className="space-y-2"><Label>ID Canal YouTube</Label><Input value={formData.youtube_channel_id || ''} onChange={(e) => handleChange('youtube_channel_id', e.target.value)} /></div>
         </TabsContent>
 

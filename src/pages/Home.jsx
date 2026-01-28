@@ -1,92 +1,98 @@
-﻿import React from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
-import { motion } from 'framer-motion';
-
+import { 
+  Play, Calendar, Heart, MapPin, BookOpen, 
+  Users, Bell, Menu, DollarSign
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
-import LoadingSpinner from '@/components/shared/LoadingSpinner';
-import QuickActions from '@/components/home/QuickActions';
-import NextEvents from '@/components/home/NextEvents';
-import LatestNews from '@/components/home/LatestNews';
-import SocialLinks from '@/components/home/SocialLinks';
+
+// Componente de Ícone Branco (Estilo IEADJO)
+const MenuIcon = ({ icon: Icon, label, to }) => (
+  <Link to={to} className="flex flex-col items-center gap-2 group">
+    <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center group-active:scale-95 transition-all hover:bg-white/20 shadow-lg">
+      <Icon className="w-6 h-6 sm:w-7 sm:h-7 text-white" strokeWidth={1.5} />
+    </div>
+    <span className="text-[10px] sm:text-xs font-medium text-white text-center drop-shadow-md tracking-wide">
+      {label}
+    </span>
+  </Link>
+);
 
 export default function Home() {
-  const { data: churchInfo, isLoading: loadingInfo } = useQuery({
+  const [churchInfo, setChurchInfo] = useState(null);
+
+  const { data: infoData } = useQuery({
     queryKey: ['churchInfo'],
     queryFn: async () => {
       const list = await base44.entities.ChurchInfo.list();
-      return list[0] || null;
+      return list[0] || {};
     }
   });
 
-  const { data: events, isLoading: loadingEvents } = useQuery({
-    queryKey: ['homeEvents'],
-    queryFn: () => base44.entities.Event.filter({ is_active: true }, 'date', 5)
-  });
+  useEffect(() => {
+    if (infoData) setChurchInfo(infoData);
+  }, [infoData]);
 
-  const { data: news, isLoading: loadingNews } = useQuery({
-    queryKey: ['homeNews'],
-    queryFn: () => base44.entities.News.filter({ is_published: true }, '-created_date', 5)
-  });
-
-  if (loadingInfo || loadingEvents || loadingNews) {
-    return <LoadingSpinner />;
-  }
+  // Se não tiver imagem carregada, usa um fundo cinza escuro neutro
+  const bgImage = churchInfo?.banner_url;
 
   return (
     <Layout currentPageName="Home">
-      {/* Banner Principal - Agora usa aspect-ratio para se adaptar */}
-      <div className="relative w-full bg-gray-900 shadow-md">
-        {/* aspect-video (16:9) no desktop, aspect-[4/3] no mobile para ficar mais alto */}
-        <div className="relative w-full aspect-[4/3] md:aspect-[21/9] max-h-[500px]">
-          {churchInfo?.banner_url ? (
+      {/* Container Full Screen */}
+      <div className="relative min-h-screen bg-gray-900 flex flex-col">
+        
+        {/* Imagem de Fundo (Sua Arte 1080x1920) */}
+        <div className="absolute inset-0 z-0">
+          {bgImage ? (
             <img 
-              src={churchInfo.banner_url} 
-              alt="Banner da Igreja" 
-              className="w-full h-full object-cover opacity-80"
+              src={bgImage} 
+              alt="Fundo Principal" 
+              className="w-full h-full object-cover"
             />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-amber-600 to-orange-800 opacity-80" />
+            <div className="w-full h-full bg-gradient-to-b from-gray-800 to-gray-900 flex items-center justify-center">
+              <p className="text-white/30 text-sm">Carregue o Banner no Admin</p>
+            </div>
           )}
           
-          {/* Gradiente de proteção para o texto */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+          {/* Gradiente APENAS no rodapé para os ícones contrastarem */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/20 pointer-events-none" />
+        </div>
 
-          {/* Conteúdo do Banner */}
-          <div className="absolute bottom-0 left-0 right-0 p-6 md:p-10">
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-end gap-4"
-            >
-              {churchInfo?.logo_url && (
-                <img 
-                  src={churchInfo.logo_url} 
-                  alt="Logo" 
-                  className="w-16 h-16 md:w-24 md:h-24 rounded-xl bg-white p-1 shadow-lg object-contain flex-shrink-0"
-                />
-              )}
-              <div className="flex-1 pb-1">
-                <h1 className="text-xl md:text-4xl font-bold text-white leading-tight drop-shadow-md">
-                  {churchInfo?.name || 'Minha Igreja'}
-                </h1>
-                <p className="text-gray-200 text-sm md:text-lg mt-1 drop-shadow-sm font-medium">
-                  {churchInfo?.address}
-                </p>
-              </div>
-            </motion.div>
+        {/* Conteúdo Sobreposto */}
+        <div className="relative z-10 flex-1 flex flex-col px-6 py-6">
+          
+          {/* Topo: Apenas o ícone de notificação discreto na direita */}
+          <header className="flex justify-end">
+            <Link to="/noticias">
+              <Button variant="ghost" size="icon" className="text-white hover:bg-white/20 rounded-full">
+                <Bell className="w-6 h-6" />
+              </Button>
+            </Link>
+          </header>
+
+          {/* Espaço Central Vazio (Para sua Logo/Lema brilharem) */}
+          <div className="flex-1"></div>
+
+          {/* Grid de Ícones Inferior */}
+          <div className="pb-24">
+            <div className="grid grid-cols-4 gap-4 justify-items-center">
+              <MenuIcon icon={Play} label="AO VIVO" to="/aovivo" />
+              <MenuIcon icon={Calendar} label="AGENDA" to="/agenda" />
+              <MenuIcon icon={DollarSign} label="OFERTAS" to="/ofertas" />
+              <MenuIcon icon={BookOpen} label="ESTUDOS" to="/conteudo" />
+              
+              <MenuIcon icon={MapPin} label="IGREJAS" to="/congregacoes" />
+              <MenuIcon icon={Users} label="LÍDERES" to="/lideranca" />
+              <MenuIcon icon={Heart} label="PEDIDOS" to="/conteudo" /> 
+              <MenuIcon icon={Menu} label="MAIS" to="/menu" />
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Conteúdo da Página */}
-      <div className="max-w-lg mx-auto px-4 mt-6 space-y-8 pb-20">
-        <div className="bg-white rounded-2xl p-4 shadow-md border border-gray-100">
-          <QuickActions />
         </div>
-        <NextEvents events={events} />
-        <LatestNews news={news} />
-        <SocialLinks churchInfo={churchInfo} />
       </div>
     </Layout>
   );
