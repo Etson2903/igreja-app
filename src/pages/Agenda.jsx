@@ -1,175 +1,180 @@
-﻿import React, { useState } from 'react';
+﻿import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, Clock, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, isToday } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { Button } from '@/components/ui/button';
-
-import PageHeader from '@/components/shared/PageHeader';
-import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import { supabase } from '@/lib/supabase';
+import { motion } from 'framer-motion';
+import { Calendar, Clock, MapPin, Loader2, Repeat, ChevronLeft } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function Agenda() {
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date());
-
   const { data: events = [], isLoading } = useQuery({
-    queryKey: ['events'],
-    queryFn: () => base44.entities.Event.filter({ is_active: true }, 'date', 100)
+    queryKey: ['agenda-events'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .eq('is_active', true)
+        .order('date', { ascending: true });
+      
+      if (error) throw error;
+      return data;
+    }
   });
 
-  const monthStart = startOfMonth(currentMonth);
-  const monthEnd = endOfMonth(currentMonth);
-  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
-
-  const getEventsForDate = (date) => {
-    return events.filter(e => isSameDay(parseISO(e.date), date));
+  const translateDay = (day) => {
+    const days = {
+      'sunday': 'Domingo', 'monday': 'Segunda', 'tuesday': 'Terça',
+      'wednesday': 'Quarta', 'thursday': 'Quinta', 'friday': 'Sexta', 'saturday': 'Sábado'
+    };
+    return days[day] || day;
   };
 
-  const selectedEvents = getEventsForDate(selectedDate);
+  const formatDateDisplay = (dateString) => {
+    if (!dateString) return { day: '', month: '', full: '', weekDay: '' };
+    
+    const parts = dateString.split('T')[0].split('-');
+    const year = parseInt(parts[0]);
+    const month = parseInt(parts[1]);
+    const day = parts[2];
 
-  const eventTypeColors = {
-    culto: 'bg-blue-500',
-    evento: 'bg-purple-500',
-    reuniao: 'bg-amber-500',
-    conferencia: 'bg-rose-500',
-    encontro: 'bg-emerald-500'
+    const months = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
+    const monthName = months[month - 1];
+
+    const safeDate = new Date(year, month - 1, parseInt(day), 12, 0, 0);
+    const weekDays = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    const weekDayName = weekDays[safeDate.getDay()];
+
+    return {
+      day: day,
+      month: monthName,
+      weekDay: weekDayName,
+      full: `${weekDayName}, ${day} de ${monthName}`
+    };
   };
+
+  const processEvents = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
+
+    const recurring = events.filter(e => e.is_recurring);
+
+    const oneTime = events.filter(e => {
+      if (e.is_recurring || !e.date) return false;
+      const eventDateStr = e.date.split('T')[0];
+      return eventDateStr >= todayStr;
+    });
+
+    return [...recurring, ...oneTime].sort((a, b) => {
+        if (a.is_recurring && !b.is_recurring) return -1;
+        if (!a.is_recurring && b.is_recurring) return 1;
+        if (!a.is_recurring && !b.is_recurring) {
+            return a.date.localeCompare(b.date);
+        }
+        return 0;
+    });
+  };
+
+  const displayEvents = processEvents();
 
   if (isLoading) {
-    return <LoadingSpinner />;
+    return (
+      <div className="flex justify-center items-center min-h-screen bg-gray-50">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-amber-50/50 to-white pb-24">
-      <div className="max-w-lg mx-auto px-4 py-6">
-        <PageHeader title="Agenda" subtitle="Cultos e eventos da igreja" />
+    <div className="min-h-screen bg-gray-50 pb-20">
+      <div className="bg-white px-4 py-4 shadow-sm sticky top-0 z-10 flex items-center gap-4">
+        <Link to="/" className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
+          <ChevronLeft className="w-6 h-6" />
+        </Link>
+        <h1 className="text-xl font-bold text-gray-900">Agenda</h1>
+      </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4">
-          <div className="flex items-center justify-between mb-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}
-              className="rounded-xl"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </Button>
-            <h2 className="text-lg font-semibold text-gray-900 capitalize">
-              {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
-            </h2>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setCurrentMonth(addMonths(currentMonth, 1))}
-              className="rounded-xl"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </Button>
+      <div className="container mx-auto px-4 py-6 max-w-2xl">
+        {displayEvents.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="bg-white p-6 rounded-full inline-block mb-4 shadow-sm">
+              <Calendar className="w-8 h-8 text-gray-300" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900">Nenhum evento</h3>
+            <p className="text-gray-500">Não há eventos programados para os próximos dias.</p>
           </div>
-
-          <div className="grid grid-cols-7 gap-1 mb-2">
-            {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((day, i) => (
-              <div key={i} className="text-center text-xs font-medium text-gray-400 py-2">
-                {day}
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7 gap-1">
-            {Array.from({ length: monthStart.getDay() }).map((_, i) => (
-              <div key={`empty-${i}`} />
-            ))}
-            {days.map((day) => {
-              const dayEvents = getEventsForDate(day);
-              const isSelected = isSameDay(day, selectedDate);
-              const hasEvents = dayEvents.length > 0;
-
+        ) : (
+          <div className="space-y-4">
+            {displayEvents.map((event, index) => {
+              const dateInfo = formatDateDisplay(event.date);
+              
               return (
-                <button
-                  key={day.toISOString()}
-                  onClick={() => setSelectedDate(day)}
-                  className={`
-                    relative aspect-square rounded-xl flex flex-col items-center justify-center
-                    transition-all duration-200
-                    ${isSelected ? 'bg-amber-500 text-white shadow-lg' : 'hover:bg-gray-100'}
-                    ${isToday(day) && !isSelected ? 'ring-2 ring-amber-300' : ''}
-                  `}
-                >
-                  <span className={`text-sm font-medium ${!isSameMonth(day, currentMonth) ? 'text-gray-300' : ''}`}>
-                    {format(day, 'd')}
-                  </span>
-                  {hasEvents && (
-                    <div className="flex gap-0.5 mt-0.5">
-                      {dayEvents.slice(0, 3).map((_, i) => (
-                        <div
-                          key={i}
-                          className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-amber-500'}`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium text-gray-500 capitalize">
-            {format(selectedDate, "EEEE, d 'de' MMMM", { locale: ptBR })}
-          </h3>
-
-          <AnimatePresence mode="wait">
-            {selectedEvents.length === 0 ? (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="bg-white rounded-xl p-6 text-center border border-gray-100"
-              >
-                <Calendar className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-gray-500 text-sm">Nenhum evento nesta data</p>
-              </motion.div>
-            ) : (
-              selectedEvents.map((event, index) => (
                 <motion.div
                   key={event.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
                   transition={{ delay: index * 0.05 }}
-                  className="bg-white rounded-xl p-4 shadow-sm border border-gray-100"
+                  className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex gap-4"
                 >
-                  <div className="flex gap-4">
-                    <div className={`w-1 rounded-full ${eventTypeColors[event.event_type] || 'bg-gray-300'}`} />
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900">{event.title}</h4>
-                      {event.description && (
-                        <p className="text-sm text-gray-500 mt-1 line-clamp-2">{event.description}</p>
+                  <div className="flex flex-col items-center justify-center bg-amber-50 rounded-xl w-16 h-16 shrink-0 border border-amber-100">
+                    {event.is_recurring ? (
+                      <>
+                        <Repeat className="w-5 h-5 text-amber-600 mb-0.5" />
+                        <span className="text-[10px] font-bold text-amber-700 uppercase">Todo</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xl font-bold text-amber-600 leading-none">{dateInfo.day}</span>
+                        <span className="text-[10px] font-bold text-amber-700 uppercase mt-0.5">{dateInfo.month.substring(0, 3)}</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start">
+                      <h3 className="font-bold text-gray-900 text-lg leading-tight mb-1">{event.title}</h3>
+                      {event.event_type && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full uppercase tracking-wide">
+                          {event.event_type}
+                        </span>
                       )}
-                      <div className="flex flex-wrap gap-3 mt-3 text-xs text-gray-500">
-                        {event.start_time && (
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5" />
-                            {event.start_time}{event.end_time && ` - ${event.end_time}`}
-                          </span>
-                        )}
-                        {event.location && (
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-3.5 h-3.5" />
-                            {event.location}
-                          </span>
-                        )}
+                    </div>
+                    
+                    {!event.is_recurring && (
+                      <p className="text-sm text-amber-600 font-medium mb-2">
+                        {dateInfo.full}
+                      </p>
+                    )}
+
+                    <p className="text-sm text-gray-500 line-clamp-2 mb-3">
+                      {event.description}
+                    </p>
+
+                    <div className="flex flex-wrap gap-3 text-xs text-gray-500">
+                      <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-md">
+                        <Clock className="w-3.5 h-3.5 text-amber-500" />
+                        <span>
+                          {event.start_time?.slice(0, 5)}
+                          {event.end_time && ` - ${event.end_time?.slice(0, 5)}`}
+                        </span>
                       </div>
+                      {event.location && (
+                        <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-md">
+                          <MapPin className="w-3.5 h-3.5 text-amber-500" />
+                          <span className="truncate max-w-[150px]">{event.location}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </motion.div>
-              ))
-            )}
-          </AnimatePresence>
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

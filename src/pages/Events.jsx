@@ -27,46 +27,34 @@ export default function Events() {
     return days[day] || day;
   };
 
+  // --- CORREÇÃO DE DATA (STRING PURA) ---
   const formatDateDisplay = (dateString) => {
     if (!dateString) return { day: '', month: '', full: '', weekDay: '' };
     
-    // SOLUÇÃO FINAL: String Slicing (Cortar o texto)
-    // O formato do Supabase é SEMPRE "YYYY-MM-DD" (10 caracteres)
-    // Ex: "2026-02-01"
-    
-    // Pega os pedaços diretamente da string, sem nenhuma conversão matemática
-    const yearStr = dateString.substring(0, 4);
-    const monthStr = dateString.substring(5, 7);
-    const dayStr = dateString.substring(8, 10);
+    // Corta a string manualmente: YYYY-MM-DD
+    const parts = dateString.split('T')[0].split('-');
+    const day = parts[2]; // "01"
+    const monthNum = parseInt(parts[1]); 
+    const year = parseInt(parts[0]);
 
-    const months = [
-      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-    ];
-    
-    // Converte para número SÓ para pegar o índice do array de meses
-    const monthIndex = parseInt(monthStr, 10) - 1;
-    const monthName = months[monthIndex];
+    const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const monthName = months[monthNum - 1];
 
-    // Para o dia da semana, precisamos criar um objeto Date.
-    // O TRUQUE: Adicionar "T12:00:00" garante que seja meio-dia em qualquer lugar do mundo.
-    // Isso evita que o fuso horário mude o dia.
-    const isoDateSafe = `${yearStr}-${monthStr}-${dayStr}T12:00:00`;
-    const dateObj = new Date(isoDateSafe);
-    
+    // Para dia da semana, usamos meio-dia para evitar fuso
+    const safeDate = new Date(year, monthNum - 1, parseInt(day), 12, 0, 0);
     const weekDays = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-    const weekDayName = weekDays[dateObj.getDay()];
+    const weekDayName = weekDays[safeDate.getDay()];
 
     return {
-      day: dayStr, // Usa a string original "01"
+      day: day,
       month: monthName,
       weekDay: weekDayName,
-      full: `${weekDayName}, ${dayStr} de ${monthName}`
+      full: `${weekDayName}, ${day} de ${monthName}`
     };
   };
 
   const processEvents = () => {
-    // Pega a data de hoje no formato YYYY-MM-DD local do usuário
+    // Data de hoje em string YYYY-MM-DD local
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -77,9 +65,7 @@ export default function Events() {
 
     const oneTime = events.filter(e => {
       if (e.is_recurring || !e.date) return false;
-      // Compara string com string. "2026-02-01" > "2025-05-20"
-      // Pega só os primeiros 10 caracteres para garantir
-      const eventDateStr = e.date.substring(0, 10);
+      const eventDateStr = e.date.split('T')[0];
       return eventDateStr >= todayStr;
     });
 
