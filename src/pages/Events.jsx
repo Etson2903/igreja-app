@@ -27,56 +27,59 @@ export default function Events() {
     return days[day] || day;
   };
 
-  /**
-   * LÓGICA SÊNIOR DE DATA:
-   * 1. Recebe "2026-02-01" do banco.
-   * 2. Quebra a string manualmente.
-   * 3. O dia e mês exibidos são LITERAIS da string (Zero chance de erro de fuso).
-   * 4. Para calcular o dia da semana, cria uma data ao MEIO-DIA (12:00) local.
-   *    Isso impede que fusos de -3h ou +3h mudem o dia.
-   */
   const formatDateDisplay = (dateString) => {
     if (!dateString) return { day: '', month: '', full: '', weekDay: '' };
     
-    // Passo 1: Extração Bruta (String pura)
-    // Ex: "2026-02-01" -> year="2026", month="02", day="01"
-    const parts = dateString.split('T')[0].split('-');
-    const year = parseInt(parts[0]);
-    const month = parseInt(parts[1]);
-    const day = parseInt(parts[2]);
+    // SOLUÇÃO FINAL: String Slicing (Cortar o texto)
+    // O formato do Supabase é SEMPRE "YYYY-MM-DD" (10 caracteres)
+    // Ex: "2026-02-01"
+    
+    // Pega os pedaços diretamente da string, sem nenhuma conversão matemática
+    const yearStr = dateString.substring(0, 4);
+    const monthStr = dateString.substring(5, 7);
+    const dayStr = dateString.substring(8, 10);
 
-    // Passo 2: Mapeamento de Mês (Array simples, sem biblioteca)
     const months = [
       'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
       'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
     ];
-    const monthName = months[month - 1];
+    
+    // Converte para número SÓ para pegar o índice do array de meses
+    const monthIndex = parseInt(monthStr, 10) - 1;
+    const monthName = months[monthIndex];
 
-    // Passo 3: Cálculo do Dia da Semana Seguro
-    // new Date(ano, mês-1, dia, 12, 0, 0) -> Cria data ao MEIO-DIA local
-    const safeDate = new Date(year, month - 1, day, 12, 0, 0);
+    // Para o dia da semana, precisamos criar um objeto Date.
+    // O TRUQUE: Adicionar "T12:00:00" garante que seja meio-dia em qualquer lugar do mundo.
+    // Isso evita que o fuso horário mude o dia.
+    const isoDateSafe = `${yearStr}-${monthStr}-${dayStr}T12:00:00`;
+    const dateObj = new Date(isoDateSafe);
+    
     const weekDays = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-    const weekDayName = weekDays[safeDate.getDay()];
+    const weekDayName = weekDays[dateObj.getDay()];
 
     return {
-      day: day.toString().padStart(2, '0'), // Garante "01"
+      day: dayStr, // Usa a string original "01"
       month: monthName,
       weekDay: weekDayName,
-      // Ex: "Domingo, 01 de Fevereiro"
-      full: `${weekDayName}, ${day.toString().padStart(2, '0')} de ${monthName}`
+      full: `${weekDayName}, ${dayStr} de ${monthName}`
     };
   };
 
   const processEvents = () => {
-    // Data de hoje em string YYYY-MM-DD para comparação simples de texto
-    // Isso evita qualquer complexidade de objeto Date na filtragem
-    const todayStr = new Date().toLocaleDateString('en-CA'); // Retorna YYYY-MM-DD local
+    // Pega a data de hoje no formato YYYY-MM-DD local do usuário
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
 
     const recurring = events.filter(e => e.is_recurring);
 
     const oneTime = events.filter(e => {
       if (e.is_recurring || !e.date) return false;
-      const eventDateStr = e.date.split('T')[0];
+      // Compara string com string. "2026-02-01" > "2025-05-20"
+      // Pega só os primeiros 10 caracteres para garantir
+      const eventDateStr = e.date.substring(0, 10);
       return eventDateStr >= todayStr;
     });
 
@@ -129,7 +132,6 @@ export default function Events() {
                 transition={{ delay: index * 0.1 }}
                 className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow flex flex-col md:flex-row"
               >
-                {/* Coluna da Data */}
                 <div className="md:w-48 bg-amber-50 flex flex-col items-center justify-center p-6 border-r border-amber-100/50 shrink-0">
                   {event.is_recurring ? (
                     <div className="text-center">
@@ -156,7 +158,6 @@ export default function Events() {
                   )}
                 </div>
 
-                {/* Coluna do Conteúdo */}
                 <div className="p-6 flex-1 flex flex-col justify-center">
                   <div className="flex items-start justify-between gap-4 mb-2">
                     <div>
