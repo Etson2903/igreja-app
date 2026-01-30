@@ -1,13 +1,13 @@
 ﻿import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase'; // USANDO SUPABASE
 import { motion } from 'framer-motion';
-import { Calendar, User, Share2, ArrowLeft } from 'lucide-react';
+import { Calendar, User, Share2, ArrowLeft, AlertCircle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import ReactMarkdown from 'react-markdown';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
@@ -30,14 +30,22 @@ const categoryColors = {
 
 export default function NoticiaDetalhe() {
   const navigate = useNavigate();
-  const urlParams = new URLSearchParams(window.location.search);
-  const newsId = urlParams.get('id');
+  const [searchParams] = useSearchParams();
+  const newsId = searchParams.get('id');
 
-  const { data: news, isLoading, error } = useQuery({
+  const { data: news, isLoading, isError } = useQuery({
     queryKey: ['news', newsId],
     queryFn: async () => {
-      const items = await base44.entities.News.filter({ id: newsId });
-      return items[0] || null;
+      if (!newsId) return null;
+      
+      const { data, error } = await supabase
+        .from('news')
+        .select('*')
+        .eq('id', newsId)
+        .single();
+        
+      if (error) throw error;
+      return data;
     },
     enabled: !!newsId
   });
@@ -51,9 +59,7 @@ export default function NoticiaDetalhe() {
           url: window.location.href
         });
       } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('Error sharing:', err);
-        }
+        if (err.name !== 'AbortError') console.error('Error sharing:', err);
       }
     } else {
       navigator.clipboard.writeText(window.location.href);
@@ -61,143 +67,100 @@ export default function NoticiaDetalhe() {
     }
   };
 
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
+  if (isLoading) return <LoadingSpinner />;
 
-  if (!news) {
+  if (isError || !news) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-amber-50/50 to-white flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-500">Notícia não encontrada</p>
-          <Button
-            variant="outline"
-            onClick={() => navigate(-1)}
-            className="mt-4"
-          >
-            Voltar
-          </Button>
-        </div>
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4">
+        <AlertCircle className="w-12 h-12 text-gray-300 mb-4" />
+        <p className="text-gray-500 mb-4">Conteúdo não encontrado</p>
+        <Button variant="outline" onClick={() => navigate(-1)}>Voltar</Button>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-amber-50/50 to-white pb-24">
-      <div className="max-w-lg mx-auto">
-        {news.image_url && (
-          <div className="relative h-56 md:h-72">
-            <img
-              src={news.image_url}
-              alt={news.title}
-              className="w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+    <div className="min-h-screen bg-white pb-24">
+      {/* Imagem de Capa ou Header Simples */}
+      {news.image_url ? (
+        <div className="relative h-64 md:h-80 w-full">
+          <img
+            src={news.image_url}
+            alt={news.title}
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+          
+          {/* Botões Flutuantes */}
+          <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start pt-12 md:pt-4">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => navigate(-1)}
-              className="absolute top-4 left-4 rounded-xl bg-white/80 backdrop-blur-sm hover:bg-white"
+              className="bg-white/20 backdrop-blur-md hover:bg-white/30 text-white rounded-full"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-6 h-6" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={handleShare}
-              className="absolute top-4 right-4 rounded-xl bg-white/80 backdrop-blur-sm hover:bg-white"
+              className="bg-white/20 backdrop-blur-md hover:bg-white/30 text-white rounded-full"
             >
               <Share2 className="w-5 h-5" />
             </Button>
           </div>
-        )}
+        </div>
+      ) : (
+        <div className="pt-12 px-4 pb-2 flex justify-between items-center">
+          <Button variant="ghost" onClick={() => navigate(-1)} className="-ml-2">
+            <ArrowLeft className="w-5 h-5 mr-2" /> Voltar
+          </Button>
+          <Button variant="ghost" size="icon" onClick={handleShare}>
+            <Share2 className="w-5 h-5" />
+          </Button>
+        </div>
+      )}
 
-        <div className="px-4 py-6">
-          {!news.image_url && (
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex items-center justify-between mb-6"
-            >
-              <Button
-                variant="ghost"
-                onClick={() => navigate(-1)}
-                className="rounded-xl -ml-2"
-              >
-                <ArrowLeft className="w-5 h-5 mr-2" />
-                Voltar
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleShare}
-                className="rounded-xl"
-              >
-                <Share2 className="w-5 h-5" />
-              </Button>
-            </motion.div>
-          )}
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-wrap items-center gap-3 mb-4"
-          >
-            <span className={`text-xs px-3 py-1 rounded-full font-medium ${categoryColors[news.category] || categoryColors.noticia}`}>
+      <div className="max-w-2xl mx-auto px-5 -mt-6 relative z-10">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-t-3xl p-6 md:p-8 shadow-sm border border-gray-100 min-h-[500px]"
+        >
+          {/* Tags e Data */}
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <span className={`text-xs px-3 py-1 rounded-full font-semibold uppercase tracking-wide ${categoryColors[news.category] || categoryColors.noticia}`}>
               {categoryLabels[news.category] || 'Notícia'}
             </span>
-            <div className="flex items-center gap-1 text-xs text-gray-500">
+            <div className="flex items-center gap-1 text-xs text-gray-500 font-medium">
               <Calendar className="w-3.5 h-3.5" />
-              {format(parseISO(news.created_date), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              {news.created_date && format(parseISO(news.created_date), "d 'de' MMM, yyyy", { locale: ptBR })}
             </div>
-            {news.author && (
-              <div className="flex items-center gap-1 text-xs text-gray-500">
-                <User className="w-3.5 h-3.5" />
-                {news.author}
-              </div>
-            )}
-          </motion.div>
+          </div>
 
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-2xl md:text-3xl font-bold text-gray-900 mb-6"
-          >
+          {/* Título */}
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-6 leading-tight">
             {news.title}
-          </motion.h1>
+          </h1>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="prose prose-amber max-w-none"
-          >
-            <ReactMarkdown
-              components={{
-                p: ({ children }) => <p className="text-gray-700 leading-relaxed mb-4">{children}</p>,
-                h1: ({ children }) => <h1 className="text-2xl font-bold text-gray-900 mt-6 mb-4">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-xl font-bold text-gray-900 mt-5 mb-3">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-lg font-semibold text-gray-900 mt-4 mb-2">{children}</h3>,
-                ul: ({ children }) => <ul className="list-disc list-inside space-y-2 mb-4">{children}</ul>,
-                ol: ({ children }) => <ol className="list-decimal list-inside space-y-2 mb-4">{children}</ol>,
-                li: ({ children }) => <li className="text-gray-700">{children}</li>,
-                blockquote: ({ children }) => (
-                  <blockquote className="border-l-4 border-amber-500 pl-4 italic text-gray-600 my-4">
-                    {children}
-                  </blockquote>
-                ),
-                a: ({ children, href }) => (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-amber-600 hover:text-amber-700 underline">
-                    {children}
-                  </a>
-                )
-              }}
-            >
+          {/* Autor */}
+          {news.author && (
+            <div className="flex items-center gap-2 mb-8 border-b border-gray-100 pb-6">
+              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                <User className="w-4 h-4 text-gray-500" />
+              </div>
+              <span className="text-sm font-medium text-gray-600">{news.author}</span>
+            </div>
+          )}
+
+          {/* Conteúdo Markdown */}
+          <div className="prose prose-amber prose-lg max-w-none text-gray-700">
+            <ReactMarkdown>
               {news.content}
             </ReactMarkdown>
-          </motion.div>
-        </div>
+          </div>
+        </motion.div>
       </div>
     </div>
   );

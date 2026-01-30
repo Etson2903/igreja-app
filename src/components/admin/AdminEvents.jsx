@@ -16,10 +16,8 @@ export default function AdminEvents() {
   
   const queryClient = useQueryClient();
 
-  // Função auxiliar para formatar data ignorando timezone (UTC fix)
   const formatDateUTC = (dateString) => {
     if (!dateString) return '';
-    // Divide a string YYYY-MM-DD e cria a data manualmente para evitar conversão de fuso
     const [year, month, day] = dateString.split('T')[0].split('-');
     return `${day}/${month}/${year}`;
   };
@@ -242,7 +240,6 @@ export default function AdminEvents() {
                 ) : (
                   <span className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded text-xs">
                     <CalendarIcon className="w-3 h-3" /> 
-                    {/* AQUI ESTÁ A CORREÇÃO: USANDO formatDateUTC */}
                     {formatDateUTC(event.date)}
                     {event.end_date && event.end_date !== event.date && ` até ${formatDateUTC(event.end_date)}`}
                   </span>

@@ -1,5 +1,6 @@
 ﻿import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+// MUDANÇA AQUI: HashRouter em vez de BrowserRouter
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 
@@ -19,7 +20,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      staleTime: 1000 * 60 * 5, // 5 minutos
+      staleTime: 1000 * 60 * 5,
     },
   },
 });
@@ -37,12 +38,15 @@ function App() {
           <Route path="/departamentos" element={<Departamentos />} />
           <Route path="/congregacoes" element={<Congregacoes />} />
           <Route path="/noticias" element={<Noticias />} />
+          
+          {/* CORREÇÃO AQUI: Rota ajustada para bater com o link do Conteudo.jsx */}
+          <Route path="/noticia-detalhe" element={<NoticiaDetalhe />} />
+          
+          {/* Mantive a antiga por segurança caso algum outro lugar use */}
           <Route path="/noticia/:id" element={<NoticiaDetalhe />} />
+          
           <Route path="/conteudo" element={<Conteudo />} />
-          
-          {/* Rota Administrativa */}
           <Route path="/admin" element={<Admin />} />
-          
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <Toaster position="top-center" richColors />

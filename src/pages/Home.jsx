@@ -1,13 +1,35 @@
 ﻿import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useQuery } from '@tanstack/react-query'; // Importado
+import { supabase } from '@/lib/supabase'; // Importado
 import { 
   Calendar, Video, MapPin, BookOpen, Users, UserCheck, Newspaper, Heart, 
-  Instagram, Facebook, Youtube 
+  Instagram, Facebook, Youtube, Loader2 
 } from 'lucide-react';
 
 export default function Home() {
-  const bannerUrl = "https://itaxbjauwcmwcdknpjvl.supabase.co/storage/v1/object/public/files/banner.png";
+  // 1. Busca as configurações do Supabase
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('*')
+        .single(); // Pega apenas a primeira linha
+      
+      if (error) {
+        console.error('Erro ao buscar configurações:', error);
+        return null;
+      }
+      return data;
+    },
+    staleTime: 1000 * 60 * 60, // Cache de 1 hora (configurações mudam pouco)
+  });
+
+  // URL padrão caso não tenha no banco
+  const defaultBanner = "https://itaxbjauwcmwcdknpjvl.supabase.co/storage/v1/object/public/files/banner.png";
+  const bannerUrl = settings?.banner_url || defaultBanner;
 
   const menuItems = [
     { name: 'Agenda', path: '/agenda', icon: Calendar },
@@ -25,7 +47,11 @@ export default function Home() {
       
       {/* 1. BANNER DE FUNDO */}
       <div className="absolute inset-0 z-0">
-        <img 
+        {/* Efeito de carregamento suave da imagem */}
+        <motion.img 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1 }}
           src={bannerUrl} 
           alt="Banner Igreja" 
           className="w-full h-full object-cover"
@@ -38,7 +64,7 @@ export default function Home() {
         
         <div className="flex-1"></div>
 
-        {/* GRID DE NAVEGAÇÃO (Tamanho Equilibrado) */}
+        {/* GRID DE NAVEGAÇÃO */}
         <div className="pb-24">
           <div className="grid grid-cols-4 gap-x-2 gap-y-5"> 
             {menuItems.map((item, index) => (
@@ -50,12 +76,10 @@ export default function Home() {
                   whileTap={{ scale: 0.95 }}
                   className="flex flex-col items-center justify-center gap-2 rounded-xl"
                 >
-                  {/* Ícone Ajustado: w-8 (32px) com padding p-3.5 */}
                   <div className="p-3.5 bg-white/10 backdrop-blur-md rounded-[18px] border border-white/20 shadow-lg hover:bg-white/20 transition-all">
                     <item.icon className="w-8 h-8 stroke-[1.5] text-white" />
                   </div>
                   
-                  {/* Texto */}
                   <span className="text-[11px] font-semibold text-white/90 tracking-wide text-center drop-shadow-lg leading-tight">
                     {item.name}
                   </span>
@@ -67,17 +91,33 @@ export default function Home() {
 
       </div>
 
-      {/* 3. RODAPÉ */}
+      {/* 3. RODAPÉ COM LINKS DINÂMICOS */}
       <div className="absolute bottom-8 left-0 right-0 z-20 flex justify-center gap-8">
-        <a href="https://instagram.com" target="_blank" className="text-white/70 hover:text-white hover:scale-110 transition-all">
-          <Instagram className="w-6 h-6 stroke-[1.5]" />
-        </a>
-        <a href="https://facebook.com" target="_blank" className="text-white/70 hover:text-white hover:scale-110 transition-all">
-          <Facebook className="w-6 h-6 stroke-[1.5]" />
-        </a>
-        <a href="https://youtube.com" target="_blank" className="text-white/70 hover:text-white hover:scale-110 transition-all">
-          <Youtube className="w-6 h-6 stroke-[1.5]" />
-        </a>
+        {/* Só exibe o ícone se o link existir no banco ou se estiver carregando (skeleton visual) */}
+        
+        {isLoading ? (
+           <Loader2 className="w-6 h-6 text-white/50 animate-spin" />
+        ) : (
+          <>
+            {settings?.instagram_url && (
+              <a href={settings.instagram_url} target="_blank" rel="noopener noreferrer" className="text-white/70 hover:text-white hover:scale-110 transition-all">
+                <Instagram className="w-6 h-6 stroke-[1.5]" />
+              </a>
+            )}
+            
+            {settings?.facebook_url && (
+              <a href={settings.facebook_url} target="_blank" rel="noopener noreferrer" className="text-white/70 hover:text-white hover:scale-110 transition-all">
+                <Facebook className="w-6 h-6 stroke-[1.5]" />
+              </a>
+            )}
+            
+            {settings?.youtube_url && (
+              <a href={settings.youtube_url} target="_blank" rel="noopener noreferrer" className="text-white/70 hover:text-white hover:scale-110 transition-all">
+                <Youtube className="w-6 h-6 stroke-[1.5]" />
+              </a>
+            )}
+          </>
+        )}
       </div>
 
     </div>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">igreja-app</string>
+    <string name="title_activity_main">igreja-app</string>
+    <string name="package_name">com.suaigreja.app</string>
+    <string name="custom_url_scheme">com.suaigreja.app</string>
+</resources>

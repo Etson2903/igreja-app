@@ -1,14 +1,13 @@
 ﻿import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { createPageUrl } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase'; // MIGRADO PARA SUPABASE
 import { motion } from 'framer-motion';
-import { Newspaper, Search } from 'lucide-react';
+import { Newspaper, Search, AlertCircle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import PageHeader from '@/components/shared/PageHeader';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
@@ -34,15 +33,33 @@ export default function Noticias() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
 
+  // Busca notícias do Supabase
   const { data: news = [], isLoading } = useQuery({
     queryKey: ['news'],
-    queryFn: () => base44.entities.News.filter({ is_published: true }, '-created_date', 100)
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('news')
+        .select('*')
+        .eq('is_published', true)
+        .order('created_date', { ascending: false })
+        .limit(100);
+        
+      if (error) {
+        console.error('Erro ao buscar notícias:', error);
+        return [];
+      }
+      return data;
+    }
   });
 
   const filteredNews = news.filter(item => {
     const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.summary && item.summary.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesCategory = activeCategory === 'all' || item.category === activeCategory;
+    
+    // Filtro case-insensitive para categoria
+    const matchesCategory = activeCategory === 'all' || 
+      item.category?.toLowerCase() === activeCategory.toLowerCase();
+      
     return matchesSearch && matchesCategory;
   });
 
@@ -51,8 +68,9 @@ export default function Noticias() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
+      {/* LINK CORRIGIDO: Usa caminho direto */}
       <Link
-        to={`${createPageUrl('NoticiaDetalhe')}?id=${item.id}`}
+        to={`/noticia-detalhe?id=${item.id}`}
         className={`block bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow ${
           featured ? 'col-span-full' : ''
         }`}
@@ -72,10 +90,10 @@ export default function Noticias() {
               {categoryLabels[item.category] || 'Notícia'}
             </span>
             <span className="text-xs text-gray-400">
-              {format(parseISO(item.created_date), "d 'de' MMMM", { locale: ptBR })}
+              {item.created_date && format(parseISO(item.created_date), "d 'de' MMM", { locale: ptBR })}
             </span>
           </div>
-          <h3 className={`font-semibold text-gray-900 ${featured ? 'text-lg' : 'text-base'} line-clamp-2`}>
+          <h3 className={`font-semibold text-gray-900 ${featured ? 'text-lg' : 'text-base'} line-clamp-2 leading-snug`}>
             {item.title}
           </h3>
           {item.summary && (
@@ -94,9 +112,9 @@ export default function Noticias() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-amber-50/50 to-white pb-24">
+    <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-lg mx-auto px-4 py-6">
-        <PageHeader title="Notícias" subtitle="Comunicados e avisos" />
+        <PageHeader title="Notícias" subtitle="Fique por dentro de tudo" />
 
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -104,16 +122,16 @@ export default function Noticias() {
             placeholder="Buscar notícias..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 rounded-xl border-gray-200 focus:border-amber-500 focus:ring-amber-500"
+            className="pl-10 rounded-xl border-gray-200 focus:border-amber-500 focus:ring-amber-500 bg-white"
           />
         </div>
 
         <Tabs defaultValue="all" onValueChange={setActiveCategory} className="mb-6">
-          <TabsList className="w-full flex overflow-x-auto bg-gray-100 rounded-xl p-1 gap-1">
-            <TabsTrigger value="all" className="rounded-lg flex-shrink-0">Todos</TabsTrigger>
-            <TabsTrigger value="aviso" className="rounded-lg flex-shrink-0">Avisos</TabsTrigger>
-            <TabsTrigger value="devocional" className="rounded-lg flex-shrink-0">Devocionais</TabsTrigger>
-            <TabsTrigger value="estudo" className="rounded-lg flex-shrink-0">Estudos</TabsTrigger>
+          <TabsList className="w-full flex overflow-x-auto bg-white p-1 rounded-xl gap-1 border border-gray-100 shadow-sm no-scrollbar">
+            <TabsTrigger value="all" className="rounded-lg flex-shrink-0 text-xs md:text-sm">Todos</TabsTrigger>
+            <TabsTrigger value="aviso" className="rounded-lg flex-shrink-0 text-xs md:text-sm">Avisos</TabsTrigger>
+            <TabsTrigger value="noticia" className="rounded-lg flex-shrink-0 text-xs md:text-sm">Notícias</TabsTrigger>
+            <TabsTrigger value="comunicado" className="rounded-lg flex-shrink-0 text-xs md:text-sm">Comunicados</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -125,13 +143,17 @@ export default function Noticias() {
           />
         ) : (
           <div className="space-y-4">
-            {filteredNews.filter(n => n.is_highlighted)[0] && (
-              <NewsCard item={filteredNews.filter(n => n.is_highlighted)[0]} featured />
+            {/* Destaque (primeira notícia marcada como destaque) */}
+            {filteredNews.find(n => n.is_highlighted) && (
+              <NewsCard item={filteredNews.find(n => n.is_highlighted)} featured />
             )}
 
-            {filteredNews.filter(n => !n.is_highlighted || filteredNews.filter(x => x.is_highlighted).indexOf(n) !== 0).map((item, index) => (
-              <NewsCard key={item.id} item={item} />
-            ))}
+            {/* Lista normal (exclui o destaque se já foi mostrado) */}
+            {filteredNews
+              .filter(n => !n.is_highlighted || filteredNews.find(x => x.is_highlighted) !== n)
+              .map((item) => (
+                <NewsCard key={item.id} item={item} />
+              ))}
           </div>
         )}
       </div>

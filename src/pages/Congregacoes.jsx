@@ -1,8 +1,8 @@
 ﻿import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { supabase } from '@/lib/supabase'; // MIGRADO PARA SUPABASE
 import { motion } from 'framer-motion';
-import { MapPin, Phone, Clock, Navigation, Church } from 'lucide-react';
+import { MapPin, Phone, Clock, Navigation, Church, AlertCircle } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import { Button } from '@/components/ui/button';
 import 'leaflet/dist/leaflet.css';
@@ -23,17 +23,32 @@ L.Icon.Default.mergeOptions({
 export default function Congregacoes() {
   const [viewMode, setViewMode] = useState('list');
 
+  // Busca informações da Sede (tabela settings)
   const { data: churchInfo } = useQuery({
-    queryKey: ['churchInfo'],
+    queryKey: ['settings'],
     queryFn: async () => {
-      const list = await base44.entities.ChurchInfo.list();
-      return list[0] || null;
+      const { data, error } = await supabase.from('settings').select('*').single();
+      if (error && error.code !== 'PGRST116') console.error(error);
+      return data || {};
     }
   });
 
+  // Busca Congregações (tabela congregations)
   const { data: congregations = [], isLoading } = useQuery({
     queryKey: ['congregations'],
-    queryFn: () => base44.entities.Congregation.filter({ is_active: true }, 'name', 100)
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('congregations')
+        .select('*')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+        
+      if (error) {
+        console.error('Erro ao buscar congregações:', error);
+        return [];
+      }
+      return data;
+    }
   });
 
   const openMaps = (congregation) => {
@@ -44,6 +59,7 @@ export default function Congregacoes() {
     }
   };
 
+  // Define centro do mapa (prioridade: 1ª congregação > Sede > Brasília)
   const mapCenter = congregations.length > 0 && congregations[0].latitude
     ? [congregations[0].latitude, congregations[0].longitude]
     : churchInfo?.latitude && churchInfo?.longitude
@@ -82,6 +98,7 @@ export default function Congregacoes() {
           }
         />
 
+        {/* Card da Sede (se tiver endereço configurado) */}
         {churchInfo?.address && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -92,11 +109,11 @@ export default function Congregacoes() {
               <Church className="w-5 h-5" />
               <span className="font-semibold">Sede Principal</span>
             </div>
-            <h3 className="text-lg font-bold mb-2">{churchInfo.name}</h3>
+            <h3 className="text-lg font-bold mb-2">{churchInfo.name || 'Sede da Igreja'}</h3>
             <p className="text-amber-100 text-sm mb-3">{churchInfo.address}</p>
             <Button
               onClick={() => openMaps({ latitude: churchInfo.latitude, longitude: churchInfo.longitude, address: churchInfo.address })}
-              className="bg-white/20 hover:bg-white/30 text-white border-0"
+              className="bg-white/20 hover:bg-white/30 text-white border-0 w-full sm:w-auto"
             >
               <Navigation className="w-4 h-4 mr-2" />
               Como Chegar
@@ -107,8 +124,8 @@ export default function Congregacoes() {
         {congregations.length === 0 ? (
           <EmptyState
             icon={MapPin}
-            title="Nenhuma congregação cadastrada"
-            description="As congregações da igreja aparecerão aqui."
+            title="Nenhuma congregação"
+            description="As congregações cadastradas aparecerão aqui."
           />
         ) : viewMode === 'list' ? (
           <div className="space-y-3">
@@ -125,7 +142,7 @@ export default function Congregacoes() {
                     <img
                       src={congregation.photo_url}
                       alt={congregation.name}
-                      className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
+                      className="w-20 h-20 rounded-lg object-cover flex-shrink-0 bg-gray-100"
                     />
                   ) : (
                     <div className="w-20 h-20 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center flex-shrink-0">
@@ -134,26 +151,26 @@ export default function Congregacoes() {
                   )}
 
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-gray-900">{congregation.name}</h3>
+                    <h3 className="font-semibold text-gray-900 leading-tight mb-1">{congregation.name}</h3>
                     {congregation.neighborhood && (
-                      <p className="text-sm text-amber-600 font-medium">{congregation.neighborhood}</p>
+                      <p className="text-sm text-amber-600 font-medium mb-1">{congregation.neighborhood}</p>
                     )}
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">{congregation.address}</p>
+                    <p className="text-xs text-gray-500 line-clamp-2 mb-3">{congregation.address}</p>
 
-                    <div className="flex flex-wrap gap-2 mt-3">
+                    <div className="flex flex-wrap gap-2">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => openMaps(congregation)}
-                        className="rounded-lg text-xs h-8"
+                        className="rounded-lg text-xs h-8 px-3"
                       >
-                        <Navigation className="w-3 h-3 mr-1" />
+                        <Navigation className="w-3 h-3 mr-1.5" />
                         Rota
                       </Button>
                       {congregation.pastor_phone && (
                         <a
                           href={`tel:${congregation.pastor_phone}`}
-                          className="inline-flex items-center gap-1 px-3 h-8 text-xs font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                          className="inline-flex items-center gap-1.5 px-3 h-8 text-xs font-medium rounded-lg bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200 transition-colors"
                         >
                           <Phone className="w-3 h-3" />
                           Ligar
@@ -164,9 +181,9 @@ export default function Congregacoes() {
                 </div>
 
                 {(congregation.pastor_name || congregation.service_times) && (
-                  <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-4 text-xs text-gray-500">
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-500">
                     {congregation.pastor_name && (
-                      <span>Pastor: {congregation.pastor_name}</span>
+                      <span className="font-medium text-gray-600">Pr. {congregation.pastor_name}</span>
                     )}
                     {congregation.service_times && (
                       <span className="flex items-center gap-1">
@@ -180,10 +197,10 @@ export default function Congregacoes() {
             ))}
           </div>
         ) : (
-          <div className="rounded-2xl overflow-hidden shadow-lg h-[400px]">
+          <div className="rounded-2xl overflow-hidden shadow-lg h-[400px] border border-gray-200">
             <MapContainer
               center={mapCenter}
-              zoom={12}
+              zoom={13}
               style={{ height: '100%', width: '100%' }}
             >
               <TileLayer
@@ -196,14 +213,14 @@ export default function Congregacoes() {
                   position={[congregation.latitude, congregation.longitude]}
                 >
                   <Popup>
-                    <div className="text-sm">
-                      <h4 className="font-semibold">{congregation.name}</h4>
-                      <p className="text-gray-500 text-xs mt-1">{congregation.address}</p>
+                    <div className="text-sm min-w-[150px]">
+                      <h4 className="font-bold text-gray-900">{congregation.name}</h4>
+                      <p className="text-gray-500 text-xs mt-1 mb-2">{congregation.address}</p>
                       <button
                         onClick={() => openMaps(congregation)}
-                        className="mt-2 text-amber-600 text-xs font-medium"
+                        className="w-full bg-amber-500 text-white text-xs font-medium py-1.5 rounded hover:bg-amber-600 transition-colors"
                       >
-                        Ver rota →
+                        Ver rota
                       </button>
                     </div>
                   </Popup>
